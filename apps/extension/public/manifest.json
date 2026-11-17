@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "SubtitleFlow",
+  "version": "0.0.1",
+  "minimum_chrome_version": "116",
+  "description": "AI 实时视频字幕翻译助手",
+  "action": {
+    "default_title": "SubtitleFlow",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "tabs", "scripting", "offscreen", "tabCapture"],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["offscreen.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
+

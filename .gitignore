@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+*.log
+__pycache__/
+.pytest_cache/
+.venv/
+apps/local-service/.env
