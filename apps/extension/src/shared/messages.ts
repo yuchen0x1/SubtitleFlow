@@ -37,6 +37,7 @@ export type MessageType =
   | 'PROVIDER_STATUS'
   | 'SETTINGS_UPDATED'
   | 'IMPORT_SUBTITLES'
+  | 'CLEAR_IMPORTED_SUBTITLES'
   | 'TOGGLE_OVERLAY'
   | 'ERROR_OCCURRED';
 
@@ -59,13 +60,14 @@ export interface MessagePayloadMap {
   ASR_FINAL: AsrResult;
   TRANSLATION_RESULT: { sessionId: string; cue: SubtitleCue };
   SUBTITLE_UPDATE: { sessionId: string; cues: SubtitleCue[] };
-  VIDEO_DETECTED: VideoMetadata;
-  REQUEST_NATIVE_SUBTITLES: { sessionId: string; displayMode: DisplayMode; style: SubtitleStyle; visible: boolean };
+  VIDEO_DETECTED: VideoMetadata & { sourceLanguage?: string };
+  REQUEST_NATIVE_SUBTITLES: { sessionId: string; displayMode: DisplayMode; style: SubtitleStyle; visible: boolean; sourceLanguage: string; readNative: boolean };
   NATIVE_SUBTITLES: { sessionId: string; cues: SubtitleCue[] };
   PLAYBACK_STATE: { sessionId?: string; tabId: number; playback: PlaybackState };
   PROVIDER_STATUS: ProviderStatus;
   SETTINGS_UPDATED: { settings: AppSettings };
   IMPORT_SUBTITLES: { tabId: number; cues: SubtitleCue[]; fileName?: string };
+  CLEAR_IMPORTED_SUBTITLES: { tabId: number };
   TOGGLE_OVERLAY: { tabId: number; visible: boolean };
   ERROR_OCCURRED: { sessionId?: string; code: string; message: string; recoverable?: boolean };
 }

@@ -6,48 +6,53 @@ import { LocalServiceTranslationProvider } from '../ai/local-service';
 import { SessionManager, type SessionRecord } from './session-manager';
 import { CaptionPipeline } from './caption-pipeline';
 import { buildAsrWebSocketUrl } from './provider-routing';
+import { providerUrl } from '../ai/endpoint';
 
 interface VideoProbe { video: VideoMetadata; playback: PlaybackState; cues: SubtitleCue[]; }
-interface RunningSession { frameId: number; pipeline: CaptionPipeline; cues: Map<string, SubtitleCue>; native: boolean; }
+interface RunningSession { frameId: number; pipeline: CaptionPipeline; cues: Map<string, SubtitleCue>; source: 'page' | 'file' | 'audio'; }
 const running = new Map<string, RunningSession>();
 const probes = new Map<number, { frameId: number; probe: VideoProbe }>();
-const importedSubtitles = new Map<number, SubtitleCue[]>();
 let offscreenCreation: Promise<void> | undefined;
 
-const manager = new SessionManager({
+const manager: SessionManager = new SessionManager({
   startCapture: async (session) => {
     const found = probes.get(session.tabId);
     if (!found) throw new Error('未检测到可访问的视频，请刷新视频页后重试');
-    const fileCues = importedSubtitles.get(session.tabId) ?? await loadImportedSubtitles(session.tabId);
+    const fileCues = await loadImportedSubtitles(session.tabId);
+    if (manager.get(session.tabId) !== session || session.status === 'STOPPING') throw new Error('字幕会话已取消');
     session.playback = found.probe.playback;
     const provider = session.settings.translationProvider.kind === 'local-service'
       ? new LocalServiceTranslationProvider(session.settings.translationProvider)
       : new OpenAICompatibleProvider(session.settings.translationProvider);
     const runtime: RunningSession = {
-      frameId: found.frameId, cues: new Map(), native: found.probe.cues.length > 0 || fileCues.length > 0,
+      frameId: found.frameId, cues: new Map(),
+      source: session.settings.subtitleSource === 'audio' ? 'audio' : fileCues.length ? 'file' : 'page',
       pipeline: new CaptionPipeline(session.settings, provider,
         (cue) => void publishCue(session, cue), (error) => void failSession(session, error.message)),
     };
     running.set(session.sessionId, runtime);
     try {
-      await sendToSession(session, makeMessage('REQUEST_NATIVE_SUBTITLES', {
+      const probe = await sendToSession(session, makeMessage('REQUEST_NATIVE_SUBTITLES', {
         sessionId: session.sessionId, style: session.settings.style,
         displayMode: session.displayMode, visible: session.overlayVisible,
-      }, { tabId: session.tabId, sessionId: session.sessionId }));
-      if (runtime.native) {
-        for (const cue of found.probe.cues) runtime.cues.set(cue.id, normalizeCue(session, cue));
-        for (const cue of fileCues) runtime.cues.set(cue.id, normalizeCue(session, cue));
-        session.statusMessage = found.probe.cues.length ? '已读取原生字幕，正在显示' : '已加载导入字幕';
+        sourceLanguage: session.settings.sourceLanguage, readNative: runtime.source === 'page',
+      }, { tabId: session.tabId, sessionId: session.sessionId })) as VideoProbe | undefined;
+      if (runtime.source !== 'audio') {
+        const cues = runtime.source === 'file' ? fileCues : probe?.cues ?? found.probe.cues;
+        if (!cues.length) throw new Error('当前视频没有可读取字幕。可导入 SRT/VTT/ASS/SSA，或配置语音识别后手动切换字幕来源。');
+        for (const cue of cues) runtime.cues.set(cue.id, normalizeCue(session, cue));
+        session.statusMessage = runtime.source === 'file' ? '已加载导入字幕' : '已读取原生字幕，正在显示';
         void translateNearby(session);
         return session.sessionId;
       }
       const config = session.settings.asrProvider;
-      if (session.settings.subtitleSource !== 'audio' || !config.endpoint.trim() || config.kind === 'none') {
-        throw new Error('当前视频没有可读取字幕。无 AI 模式支持网页原生字幕或导入 SRT/VTT/ASS/SSA；如要识别声音，才需要配置语音识别服务。');
+      if (!config.endpoint.trim() || config.kind === 'none') {
+        throw new Error('请在设置中心配置语音识别服务，或切换回网页或文件字幕。');
       }
       if (config.kind === 'openai-compatible' && !config.model.trim()) {
         throw new Error('请填写语音识别模型；聊天翻译模型不能代替 /audio/transcriptions 识别接口');
       }
+      providerUrl(config.endpoint, config.kind !== 'openai-compatible');
       for (const other of manager.all()) if (other.tabId !== session.tabId) await stopSession(other.tabId);
       await ensureOffscreenDocument();
       const streamId = await new Promise<string>((resolve, reject) => {
@@ -75,7 +80,7 @@ const manager = new SessionManager({
   stopCapture: async (sessionId) => {
     const runtime = running.get(sessionId);
     runtime?.pipeline.dispose();
-    if (runtime && !runtime.native) await sendOffscreen(makeMessage('STOP_CAPTURE', { sessionId })).catch(() => undefined);
+    if (runtime?.source === 'audio') await sendOffscreen(makeMessage('STOP_CAPTURE', { sessionId })).catch(() => undefined);
     running.delete(sessionId);
   },
 });
@@ -100,6 +105,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 
 async function handle(message: AnyMessageEnvelope, sender: chrome.runtime.MessageSender): Promise<unknown> {
   const fromContent = sender.tab?.id;
+  if (fromContent !== undefined && !['NATIVE_SUBTITLES', 'PLAYBACK_STATE', 'ERROR_OCCURRED'].includes(message.type)) return { ok: false };
   switch (message.type) {
     case 'START_TRANSLATION': {
       if (fromContent !== undefined) throw new Error('请从插件弹窗主动启动');
@@ -111,7 +117,7 @@ async function handle(message: AnyMessageEnvelope, sender: chrome.runtime.Messag
       if (settings.displayMode !== 'original' && !hasTranslationProvider(settings)) {
         settings = { ...settings, displayMode: 'original' };
       }
-      const found = await discoverVideo(tabId);
+      const found = await discoverVideo(tabId, settings.sourceLanguage);
       if (!found.probe.video.hasVideo) throw new Error('当前页面未检测到可访问的视频，请播放视频后重试');
       probes.set(tabId, found);
       const session = await manager.start(tabId, settings, found.probe.video);
@@ -119,12 +125,13 @@ async function handle(message: AnyMessageEnvelope, sender: chrome.runtime.Messag
     }
     case 'GET_SESSION_STATE': {
       const current = manager.get(message.payload.tabId);
-      if (current) return snapshot(current);
+      const importedCueCount = (await loadImportedSubtitles(message.payload.tabId)).length;
+      if (current) return { ...snapshot(current), importedCueCount };
       try {
         const found = probes.get(message.payload.tabId) ?? await discoverVideo(message.payload.tabId);
         probes.set(message.payload.tabId, found);
-        return { status: 'IDLE', video: found.probe.video };
-      } catch { return { status: 'IDLE' }; }
+        return { status: 'IDLE', video: found.probe.video, importedCueCount };
+      } catch { return { status: 'IDLE', importedCueCount }; }
     }
     case 'STOP_TRANSLATION': await stopSession(message.payload.tabId); return { status: 'IDLE' };
     case 'PAUSE_TRANSLATION':
@@ -133,7 +140,7 @@ async function handle(message: AnyMessageEnvelope, sender: chrome.runtime.Messag
       const session = manager.get(tabId);
       if (!session) return { status: 'IDLE' };
       const pause = message.type === 'PAUSE_TRANSLATION';
-      if (!running.get(session.sessionId)?.native) await sendOffscreen(pause
+      if (running.get(session.sessionId)?.source === 'audio') await sendOffscreen(pause
         ? makeMessage('PAUSE_CAPTURE', { sessionId: session.sessionId })
         : makeMessage('RESUME_CAPTURE', { sessionId: session.sessionId }));
       await (pause ? manager.pause(tabId) : manager.resume(tabId));
@@ -142,7 +149,7 @@ async function handle(message: AnyMessageEnvelope, sender: chrome.runtime.Messag
     case 'NATIVE_SUBTITLES': {
       const session = manager.all().find((item) => item.sessionId === message.payload.sessionId && item.tabId === fromContent);
       const runtime = session && running.get(session.sessionId);
-      if (session && runtime?.native) {
+      if (session && runtime?.source === 'page' && runtime.frameId === sender.frameId) {
         for (const cue of message.payload.cues.slice(0, 3000)) runtime.cues.set(cue.id, normalizeCue(session, cue));
         void translateNearby(session);
       }
@@ -158,8 +165,8 @@ async function handle(message: AnyMessageEnvelope, sender: chrome.runtime.Messag
       if (!session || message.payload.sessionId !== session.sessionId) return { ok: false };
       session.playback = message.payload.playback;
       const runtime = running.get(session.sessionId);
-      if (runtime?.native) void translateNearby(session);
-      else void sendOffscreen(makeMessage('CAPTURE_PLAYBACK', { sessionId: session.sessionId, playback: message.payload.playback })).catch(() => undefined);
+      if (runtime?.source === 'audio') void sendOffscreen(makeMessage('CAPTURE_PLAYBACK', { sessionId: session.sessionId, playback: message.payload.playback })).catch(() => undefined);
+      else if (runtime) void translateNearby(session);
       return { ok: true };
     }
     case 'TOGGLE_OVERLAY': {
@@ -178,12 +185,16 @@ async function handle(message: AnyMessageEnvelope, sender: chrome.runtime.Messag
       return { ok: true };
     }
     case 'IMPORT_SUBTITLES': {
+      ensureCanChangeImport(message.payload.tabId);
       const cues = message.payload.cues.slice(0, 3000).map((cue) => ({ ...cue, tabId: message.payload.tabId }));
       if (!cues.length) throw new Error('字幕文件中没有可识别的时间轴条目');
-      importedSubtitles.set(message.payload.tabId, cues);
       await chrome.storage.session.set({ [importedSubtitleKey(message.payload.tabId)]: cues });
       return { ok: true, count: cues.length, fileName: message.payload.fileName };
     }
+    case 'CLEAR_IMPORTED_SUBTITLES':
+      ensureCanChangeImport(message.payload.tabId);
+      await clearImportedSubtitles(message.payload.tabId);
+      return { ok: true };
     case 'ERROR_OCCURRED': {
       const id = message.sessionId ?? message.payload.sessionId;
       const session = manager.all().find((item) => item.sessionId === id);
@@ -201,7 +212,6 @@ function snapshot(session: SessionRecord): SessionSnapshot {
 
 function importedSubtitleKey(tabId: number): string { return `imported-subtitles:${tabId}`; }
 async function clearImportedSubtitles(tabId: number): Promise<void> {
-  importedSubtitles.delete(tabId);
   await chrome.storage.session.remove(importedSubtitleKey(tabId));
 }
 async function loadImportedSubtitles(tabId: number): Promise<SubtitleCue[]> {
@@ -209,6 +219,11 @@ async function loadImportedSubtitles(tabId: number): Promise<SubtitleCue[]> {
   const stored = await chrome.storage.session.get(key);
   const cues = stored[key];
   return Array.isArray(cues) ? cues as SubtitleCue[] : [];
+}
+
+function ensureCanChangeImport(tabId: number): void {
+  const session = manager.get(tabId);
+  if (session && !['ERROR', 'STOPPED'].includes(session.status)) throw new Error('请先停止当前字幕会话');
 }
 
 async function stopSession(tabId: number): Promise<void> {
@@ -257,15 +272,16 @@ async function handleAsr(result: AsrResult): Promise<void> {
 }
 
 async function failSession(session: SessionRecord, error: string): Promise<void> {
+  if (manager.get(session.tabId) !== session || session.status === 'STOPPING') return;
   manager.updateStatus(session.tabId, 'ERROR', error);
   await sendToSession(session, makeMessage('ERROR_OCCURRED', { code: 'SERVICE_ERROR', message: error,
     sessionId: session.sessionId, recoverable: true }, { sessionId: session.sessionId }));
   const runtime = running.get(session.sessionId);
   runtime?.pipeline.dispose();
-  if (runtime && !runtime.native) void sendOffscreen(makeMessage('STOP_CAPTURE', { sessionId: session.sessionId })).catch(() => undefined);
+  if (runtime?.source === 'audio') void sendOffscreen(makeMessage('STOP_CAPTURE', { sessionId: session.sessionId })).catch(() => undefined);
 }
 
-async function discoverVideo(tabId: number): Promise<{ frameId: number; probe: VideoProbe }> {
+async function discoverVideo(tabId: number, sourceLanguage?: string): Promise<{ frameId: number; probe: VideoProbe }> {
   await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ['content.js'] });
   const candidates = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: () =>
     [...document.querySelectorAll('video')].reduce((area, video) => {
@@ -274,7 +290,7 @@ async function discoverVideo(tabId: number): Promise<{ frameId: number; probe: V
   const best = candidates.filter((item) => (item.result ?? 0) > 0).sort((a, b) => (b.result ?? 0) - (a.result ?? 0))[0];
   const frameId = best?.frameId ?? 0;
   const probe = await chrome.tabs.sendMessage(tabId, makeMessage('VIDEO_DETECTED', {
-    tabId, site: '', title: '', url: '', hasVideo: false, hasNativeSubtitles: false,
+    tabId, site: '', title: '', url: '', hasVideo: false, hasNativeSubtitles: false, sourceLanguage,
   }), { frameId }) as VideoProbe | undefined;
   if (!probe?.video) throw new Error('字幕脚本未就绪，请在扩展管理页重新加载插件后刷新视频页');
   probe.video.tabId = tabId;

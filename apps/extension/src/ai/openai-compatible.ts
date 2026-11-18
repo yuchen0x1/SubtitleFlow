@@ -1,6 +1,7 @@
 import type { ProviderConfig, ProviderStatus } from '../shared/types';
 import { ProviderTimeoutError, ProviderUnavailableError } from './errors';
 import type { TranslationProvider, TranslationRequest } from './provider';
+import { httpEndpoint } from './endpoint';
 
 export class OpenAICompatibleProvider implements TranslationProvider {
   readonly name = 'openai-compatible';
@@ -18,8 +19,9 @@ export class OpenAICompatibleProvider implements TranslationProvider {
     if (request.signal?.aborted) controller.abort();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
     try {
-      const response = await fetch(`${this.config.endpoint.replace(/\/$/, '')}/chat/completions`, {
+      const response = await fetch(httpEndpoint(this.config.endpoint, '/chat/completions'), {
         method: 'POST',
+        redirect: 'error',
         headers: {
           'Content-Type': 'application/json',
           ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
@@ -57,7 +59,8 @@ export class OpenAICompatibleProvider implements TranslationProvider {
   async validateConnection(): Promise<ProviderStatus> {
     if (!this.config.endpoint.trim() || !this.config.model.trim()) return { provider: this.name, state: 'unconfigured', message: '未配置服务地址或模型', checkedAt: Date.now() };
     try {
-      const response = await fetch(`${this.config.endpoint.replace(/\/$/, '')}/models`, {
+      const response = await fetch(httpEndpoint(this.config.endpoint, '/models'), {
+        redirect: 'error',
         headers: this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : undefined,
         signal: AbortSignal.timeout(this.config.timeoutMs),
       });

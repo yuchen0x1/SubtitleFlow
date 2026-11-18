@@ -4,13 +4,25 @@ import { loadSettings, saveSettings, clearStoredData } from '../shared/storage';
 import { makeMessage } from '../shared/messages';
 import { OpenAICompatibleProvider } from '../ai/openai-compatible';
 import type { AppSettings, ProviderConfig } from '../shared/types';
+import { providerUrl } from '../ai/endpoint';
+import { checkForUpdate, type ReleaseUpdate } from '../shared/updates';
+
+const version = globalThis.chrome?.runtime?.getManifest?.().version ?? '';
 
 export function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [saved, setSaved] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState('');
+  const [update, setUpdate] = useState<ReleaseUpdate>();
   useEffect(() => { void loadSettings().then(setSettings); }, []);
   const save = async () => {
     try {
+      for (const provider of [settings.asrProvider, settings.translationProvider]) {
+        if (provider.kind !== 'none' && provider.endpoint.trim()) {
+          providerUrl(provider.endpoint, provider.kind === 'websocket' || provider.kind === 'local-service');
+        }
+      }
       await saveSettings(settings);
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
         await chrome.runtime.sendMessage(makeMessage('SETTINGS_UPDATED', { settings }));
@@ -18,9 +30,21 @@ export function App() {
       setSaved('设置已保存。更换识别或翻译服务后，请停止当前会话并重新开始。');
     } catch (error) { setSaved(error instanceof Error ? error.message : '保存失败'); }
   };
+  const checkUpdates = async () => {
+    setChecking(true); setUpdateMessage(''); setUpdate(undefined);
+    try {
+      const release = await checkForUpdate(version, true);
+      setUpdate(release);
+      if (!release) setUpdateMessage('当前已是最新正式版本。');
+    } catch {
+      setUpdateMessage('无法验证新版，请稍后重试或直接查看 GitHub Releases。');
+    } finally {
+      setChecking(false);
+    }
+  };
   return <main className="options-shell">
-    <header><div><span className="eyebrow">SubtitleFlow 0.0.2</span><h1>字幕与可选服务</h1><p>原生字幕和导入字幕可离线显示；识别与机器翻译服务按需配置。</p></div><button className="primary" onClick={() => void save()}>保存设置</button></header>
-    <div className="layout"><nav><a href="#basic">语言设置</a><a href="#ai">识别与翻译</a><a href="#style">字幕样式</a><a href="#privacy">隐私与数据</a></nav>
+    <header><div><span className="eyebrow">SubtitleFlow {version}</span><h1>字幕与可选服务</h1><p>原生字幕和导入字幕可离线显示；识别与机器翻译服务按需配置。</p></div><button className="primary" onClick={() => void save()}>保存设置</button></header>
+    <div className="layout"><nav><a href="#basic">语言设置</a><a href="#ai">识别与翻译</a><a href="#style">字幕样式</a><a href="#privacy">隐私与数据</a><a href="#updates">版本更新</a></nav>
     <section className="content">
       <section id="basic" className="card"><h2>语言设置</h2><div className="form-grid">
         <label>源语言<select value={settings.sourceLanguage} onChange={(e) => setSettings({ ...settings, sourceLanguage: e.target.value })}><option value="auto">自动检测</option><option value="en">英语</option><option value="ja">日语</option><option value="ko">韩语</option><option value="fr">法语</option><option value="de">德语</option><option value="es">西班牙语</option><option value="zh">中文</option></select></label>
@@ -34,6 +58,17 @@ export function App() {
         <ProviderEditor label="语音识别" role="asr" value={settings.asrProvider} onChange={(asrProvider) => setSettings({ ...settings, asrProvider })}/>
         <ProviderEditor label="文本翻译" role="translation" value={settings.translationProvider} onChange={(translationProvider) => setSettings({ ...settings, translationProvider })}/>
         <p className="hint">使用 Ollama 或 LM Studio 翻译时，选择 OpenAI 兼容，填写本机的 /v1 地址和已下载模型名称。只配置聊天模型不能识别音频。</p>
+      </section>
+      <section id="updates" className="card"><h2>版本更新</h2>
+        <label><input type="checkbox" checked={settings.checkForUpdates} onChange={(event) => setSettings({ ...settings, checkForUpdates: event.target.checked })}/> 打开弹窗时检查 GitHub 新版（每天最多一次）</label>
+        <p className="hint">GitHub ZIP 需要手动下载、验证并重新加载扩展。商店版本由浏览器更新。检查请求只获取公开的版本信息。</p>
+        <button disabled={checking || !version} onClick={() => void checkUpdates()}>{checking ? '正在检查…' : '检查更新'}</button>
+        {updateMessage && <p role="status">{updateMessage}</p>}
+        {update && <div role="status">
+          <p>SubtitleFlow {update.version} · {update.publishedAt} · {Math.ceil(update.bytes / 1024)} KB</p>
+          <p className="hint">{update.notes}</p>
+          <a href={update.releaseUrl} target="_blank" rel="noreferrer">查看发行说明与下载</a>
+        </div>}
       </section>
       <section id="style" className="card"><h2>字幕样式</h2><div className="form-grid">
         <label>字号<input type="number" min="12" max="72" value={settings.style.fontSize} onChange={(e) => setSettings({ ...settings, style: { ...settings.style, fontSize: Number(e.target.value) } })}/></label>
@@ -70,10 +105,10 @@ function ProviderEditor({ label, role, value, onChange }: {
         if (status.state !== 'ready') throw new Error(status.message || '连接失败');
         setResult('已通过地址与鉴权检查；翻译能力以实际字幕请求为准。');
       } else if (value.kind === 'local-service') {
-        const url = new URL(value.endpoint);
+        const url = providerUrl(value.endpoint, role === 'asr');
         url.protocol = url.protocol === 'wss:' || url.protocol === 'https:' ? 'https:' : 'http:';
         url.pathname = '/health'; url.search = '';
-        const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(5000) });
         if (!response.ok) throw new Error('本地服务返回 HTTP ' + response.status);
         const data = await response.json() as { modelLoaded?: boolean; model?: string };
         setResult(data.modelLoaded ? '本地服务已连接，Whisper 模型已加载：' + data.model :
@@ -97,7 +132,3 @@ function ProviderEditor({ label, role, value, onChange }: {
     <label>并发上限<input type="number" min="1" max="4" value={value.concurrency} onChange={(e) => change('concurrency', Number(e.target.value))}/></label>
   </div><button className="test-connection" disabled={testing} onClick={() => void test()}>{testing ? '正在检查…' : '测试' + label + '连接'}</button>{result && <p className="provider-result" role="status">{result}</p>}</section>;
 }
-
-
-
-\n

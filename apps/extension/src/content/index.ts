@@ -6,7 +6,7 @@ import { adaptVideoMetadata } from './site-adapters';
 import { VideoDetector } from './video-detector';
 import type { SubtitleCue } from '../shared/types';
 
-const VERSION = '0.0.2';
+const VERSION = chrome.runtime.getManifest().version;
 const shared = globalThis as typeof globalThis & { __subtitleFlow?: { version: string; dispose: () => void } };
 if (shared.__subtitleFlow?.version !== VERSION) {
   shared.__subtitleFlow?.dispose();
@@ -21,15 +21,16 @@ function bootstrap(): () => void {
   let lastSrc = '';
   let nativeSignature = '';
   let enabled = false;
+  let readNative = false;
   let sourceLanguage = 'auto';
   let nativeFullscreenTrack: TextTrack | undefined;
   const renderedNative = new Map<string, VTTCue>();
   const send = (message: AnyMessageEnvelope) => { void chrome.runtime.sendMessage(message).catch(() => undefined); };
 
-  function readProbe() {
+  function readProbe(language = sourceLanguage, includeCues = true) {
     detector.refresh();
     const video = detector.current();
-    const cues = video ? extractNativeSubtitles(video, sourceLanguage) : [];
+    const cues = video && includeCues ? extractNativeSubtitles(video, language) : [];
     return {
       video: adaptVideoMetadata({ tabId: 0, site: location.hostname, title: document.title, url: location.href,
         hasVideo: Boolean(video), hasNativeSubtitles: cues.length > 0 }),
@@ -63,14 +64,15 @@ function bootstrap(): () => void {
   }
   const onMessage = (message: AnyMessageEnvelope, _sender: chrome.runtime.MessageSender, respond: (value?: unknown) => void) => {
     if (!isMessage(message)) return false;
-    if (message.type === 'VIDEO_DETECTED') { respond(readProbe()); return false; }
+    if (message.type === 'VIDEO_DETECTED') { respond(readProbe(message.payload.sourceLanguage)); return false; }
     if (message.type === 'REQUEST_NATIVE_SUBTITLES') {
       clear(); sessionId = message.payload.sessionId; enabled = true;
+      sourceLanguage = message.payload.sourceLanguage;
+      readNative = message.payload.readNative;
       overlay.mount(); overlay.setDisplayMode(message.payload.displayMode);
       overlay.updateStyle(message.payload.style); overlay.setVisible(message.payload.visible);
       overlay.setStatus('SubtitleFlow · 正在连接字幕服务…');
-      const probe = readProbe(); lastSrc = detector.current()?.currentSrc ?? ''; lastUrl = location.href;
-      send(makeMessage('NATIVE_SUBTITLES', { sessionId, cues: probe.cues }, { sessionId }));
+      const probe = readProbe(sourceLanguage, readNative); lastSrc = detector.current()?.currentSrc ?? ''; lastUrl = location.href;
       playback(); respond(probe); return false;
     }
     if (message.type === 'SUBTITLE_UPDATE' && message.payload.sessionId === sessionId) {
@@ -89,7 +91,7 @@ function bootstrap(): () => void {
     if (message.type === 'ERROR_OCCURRED' && (!message.sessionId || message.sessionId === sessionId)) {
       overlay.mount(); overlay.setStatus('SubtitleFlow · ' + message.payload.message); overlay.renderAt(detector.playback().currentTime);
     }
-    if (message.type === 'STOP_TRANSLATION') clear();
+    if (message.type === 'STOP_TRANSLATION' && message.sessionId === sessionId) clear();
     return false;
   };
   detector.onVideo(() => {
@@ -113,7 +115,7 @@ function bootstrap(): () => void {
         message: '视频已切换，请重新点击开始翻译' }, { sessionId: oldSession }));
       return;
     }
-    const cues = video ? extractNativeSubtitles(video, sourceLanguage) : [];
+    const cues = video && readNative ? extractNativeSubtitles(video, sourceLanguage) : [];
     const signature = cues.length + ':' + cues[cues.length - 1]?.id;
     if (signature !== nativeSignature && cues.length) {
       nativeSignature = signature;
@@ -126,11 +128,10 @@ function bootstrap(): () => void {
     chrome.runtime.onMessage.removeListener(onMessage); document.removeEventListener('fullscreenchange', fullscreen);
     window.removeEventListener('pagehide', onPageHide);
   };
-  const onPageHide = () => { clear(); dispose(); };
+  const onPageHide = (event: PageTransitionEvent) => {
+    clear();
+    if (!event.persisted) dispose();
+  };
   window.addEventListener('pagehide', onPageHide);
   return dispose;
 }
-
-
-
-\n
