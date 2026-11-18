@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SubtitleFlow",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "minimum_chrome_version": "116",
   "description": "AI 实时视频字幕翻译助手",
   "action": {
@@ -31,3 +31,5 @@
   ]
 }
 
+
+\n

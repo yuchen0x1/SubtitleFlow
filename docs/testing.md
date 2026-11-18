@@ -2,13 +2,22 @@
 
 ## 已执行
 
+以下为 2026-11-18 对 0.0.2 构建执行的检查结果。
+
 | 检查 | 环境 | 结果 |
 | --- | --- | --- |
-| `npm test` | Node.js 24.20.0 / Vitest | PASS |
+| `npm test` | Node.js 24.20.0 / Vitest，12 个文件、19 个用例 | PASS |
 | `npm run typecheck` | TypeScript 5.6 | PASS |
 | `npm run build` | Vite 5.4 | PASS |
-| 构建后 `options.html` 浏览器渲染 | Edge 158 / BrowserSkill / local HTTP | PASS |
+| `npm run package` 与 ZIP 内容检查 | manifest 0.0.2，包含 popup、background、content 入口 | PASS |
+| 真实 MV3 扩展读取原生字幕 | 独立 Edge 158.0.4370.26 配置 / 本地合成视频 / CDP，字幕实际可见、采集调用为 0 | PASS |
+| 真实 MV3 扩展导入并显示 SRT | 同上，字幕实际可见、采集调用为 0，运行时禁用再次导入 | PASS |
+| 无字幕、无服务默认行为 | 显示原生字幕或导入文件说明，采集调用为 0 | PASS |
+| 升级保留旧 ASR 设置 | 缺少新增来源字段时默认网页或文件，不创建 offscreen、不采集音频 | PASS |
+| 显式选择语音识别 | 选中后才调用音频采集 API；自动化打开的弹窗未获得浏览器采集授权 | PARTIAL |
+
+浏览器回归直接加载项目 `dist`，通过真实弹窗点击和文件控件执行，未模拟网页字幕渲染或后台消息。保存了 JSON 报告与原生字幕、导入字幕、旧配置弹窗截图。浏览器未捕获到未处理异常。
 
 ## 尚需真实环境验证
 
-扩展目录在 Edge 的“加载已解压的扩展程序”中实际安装、YouTube 视频、浏览器用户授权、真实 tabCapture 原声回放、云端 API、faster-whisper GPU、DRM 网站和长时间运行需要在带扩展加载权限和服务配置的环境中执行。没有执行的项目不标记为通过。
+X/YouTube 等真实网站、日常用户配置中的扩展重新加载、浏览器音频采集授权、真实 tabCapture 原声回放、云端 API、faster-whisper GPU、DRM 网站和长时间运行仍需单独验收。合成视频夹具只能验证其覆盖的原生字幕和文件字幕路径，语音识别服务调用链未标记为通过。

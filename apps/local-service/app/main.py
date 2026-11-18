@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from .asr import load_model, model_status, transcribe_pcm
 
-app = FastAPI(title="SubtitleFlow Local Service", version="0.0.1")
+app = FastAPI(title="SubtitleFlow Local Service", version="0.0.2")
 app.add_middleware(CORSMiddleware,
     allow_origin_regex=r"^(chrome-extension://[a-p]{32}|http://(127\.0\.0\.1|localhost)(:\d+)?)$",
     allow_methods=["GET", "POST"], allow_headers=["Content-Type", "Authorization"],
@@ -136,3 +136,5 @@ async def asr(websocket: WebSocket) -> None:
             pass
 
 
+
+\n

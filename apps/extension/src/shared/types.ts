@@ -66,6 +66,7 @@ export interface ProviderConfig {
 }
 
 export interface AppSettings {
+  subtitleSource: 'subtitles' | 'audio';
   sourceLanguage: string;
   targetLanguage: string;
   translationMode: TranslationMode;

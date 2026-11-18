@@ -5,7 +5,9 @@ import type { SubtitleCue } from '../../apps/extension/src/shared/types';
 
 it('publishes the provider translation with the original media timestamps', async () => {
   const updates: SubtitleCue[] = [];
-  const pipeline = new CaptionPipeline(defaultSettings, {
+  const pipeline = new CaptionPipeline({ ...defaultSettings, displayMode: 'bilingual', translationProvider: {
+    kind: 'openai-compatible', endpoint: 'https://fixture.invalid/v1', model: 'fixture', apiKey: '', timeoutMs: 1000, concurrency: 1,
+  } }, {
     name: 'fixture', translate: async () => '你是认真的吗？',
     validateConnection: async () => ({ provider: 'fixture', state: 'ready', checkedAt: 0 }),
   }, (cue) => updates.push({ ...cue }), () => undefined);
@@ -17,7 +19,9 @@ it('publishes the provider translation with the original media timestamps', asyn
 
 it('reports a rejected provider instead of silently leaving an empty subtitle', async () => {
   const failures: string[] = [];
-  const pipeline = new CaptionPipeline({ ...defaultSettings, retryCount: 0 }, {
+  const pipeline = new CaptionPipeline({ ...defaultSettings, displayMode: 'bilingual', retryCount: 0, translationProvider: {
+    kind: 'openai-compatible', endpoint: 'https://fixture.invalid/v1', model: 'fixture', apiKey: '', timeoutMs: 1000, concurrency: 1,
+  } }, {
     name: 'fixture', translate: async () => { throw new Error('HTTP 401'); },
     validateConnection: async () => ({ provider: 'fixture', state: 'error', checkedAt: 0 }),
   }, () => undefined, (error) => failures.push(error.message));

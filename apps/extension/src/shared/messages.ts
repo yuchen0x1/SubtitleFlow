@@ -36,6 +36,7 @@ export type MessageType =
   | 'PLAYBACK_STATE'
   | 'PROVIDER_STATUS'
   | 'SETTINGS_UPDATED'
+  | 'IMPORT_SUBTITLES'
   | 'TOGGLE_OVERLAY'
   | 'ERROR_OCCURRED';
 
@@ -64,6 +65,7 @@ export interface MessagePayloadMap {
   PLAYBACK_STATE: { sessionId?: string; tabId: number; playback: PlaybackState };
   PROVIDER_STATUS: ProviderStatus;
   SETTINGS_UPDATED: { settings: AppSettings };
+  IMPORT_SUBTITLES: { tabId: number; cues: SubtitleCue[]; fileName?: string };
   TOGGLE_OVERLAY: { tabId: number; visible: boolean };
   ERROR_OCCURRED: { sessionId?: string; code: string; message: string; recoverable?: boolean };
 }

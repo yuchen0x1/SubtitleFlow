@@ -6,7 +6,7 @@ import { adaptVideoMetadata } from './site-adapters';
 import { VideoDetector } from './video-detector';
 import type { SubtitleCue } from '../shared/types';
 
-const VERSION = '0.0.1';
+const VERSION = '0.0.2';
 const shared = globalThis as typeof globalThis & { __subtitleFlow?: { version: string; dispose: () => void } };
 if (shared.__subtitleFlow?.version !== VERSION) {
   shared.__subtitleFlow?.dispose();
@@ -132,3 +132,5 @@ function bootstrap(): () => void {
 }
 
 
+
+\n

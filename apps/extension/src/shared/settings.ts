@@ -29,13 +29,14 @@ const emptyProvider = (kind: ProviderConfig['kind']): ProviderConfig => ({
 });
 
 export const defaultSettings: AppSettings = {
+  subtitleSource: 'subtitles',
   sourceLanguage: 'auto',
   targetLanguage: 'zh-CN',
   translationMode: 'auto',
-  displayMode: 'bilingual',
+  displayMode: 'original',
   showOverlay: true,
-  asrProvider: { ...emptyProvider('local-service'), endpoint: 'http://127.0.0.1:8765', model: 'small' },
-  translationProvider: emptyProvider('openai-compatible'),
+  asrProvider: emptyProvider('none'),
+  translationProvider: emptyProvider('none'),
   style: defaultStyle,
   contextWindow: 6,
   maxSubtitleChars: 80,
@@ -52,6 +53,7 @@ export function normalizeSettings(value: Partial<AppSettings> | null | undefined
   return {
     ...defaultSettings,
     ...input,
+    subtitleSource: input.subtitleSource === 'audio' ? 'audio' : 'subtitles',
     asrProvider: mergeProvider(input.asrProvider, defaultSettings.asrProvider),
     translationProvider: mergeProvider(input.translationProvider, defaultSettings.translationProvider),
     style: { ...defaultStyle, ...(input.style ?? {}) },
@@ -63,4 +65,8 @@ export function normalizeSettings(value: Partial<AppSettings> | null | undefined
 
 export function isProviderConfigured(provider: ProviderConfig): boolean {
   return Boolean(provider.endpoint.trim() && provider.model.trim());
+}
+
+export function hasTranslationProvider(settings: AppSettings): boolean {
+  return settings.translationProvider.kind !== 'none' && isProviderConfigured(settings.translationProvider);
 }

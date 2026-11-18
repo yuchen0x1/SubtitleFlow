@@ -19,17 +19,18 @@ export function App() {
     } catch (error) { setSaved(error instanceof Error ? error.message : '保存失败'); }
   };
   return <main className="options-shell">
-    <header><div><span className="eyebrow">SubtitleFlow 0.0.1</span><h1>字幕与 AI 服务</h1><p>分别配置语音识别和文本翻译，再回到视频页开始。</p></div><button className="primary" onClick={() => void save()}>保存设置</button></header>
+    <header><div><span className="eyebrow">SubtitleFlow 0.0.2</span><h1>字幕与可选服务</h1><p>原生字幕和导入字幕可离线显示；识别与机器翻译服务按需配置。</p></div><button className="primary" onClick={() => void save()}>保存设置</button></header>
     <div className="layout"><nav><a href="#basic">语言设置</a><a href="#ai">识别与翻译</a><a href="#style">字幕样式</a><a href="#privacy">隐私与数据</a></nav>
     <section className="content">
       <section id="basic" className="card"><h2>语言设置</h2><div className="form-grid">
         <label>源语言<select value={settings.sourceLanguage} onChange={(e) => setSettings({ ...settings, sourceLanguage: e.target.value })}><option value="auto">自动检测</option><option value="en">英语</option><option value="ja">日语</option><option value="ko">韩语</option><option value="fr">法语</option><option value="de">德语</option><option value="es">西班牙语</option><option value="zh">中文</option></select></label>
         <label>目标语言<input value={settings.targetLanguage} placeholder="zh-CN / zh-TW / en" onChange={(e) => setSettings({ ...settings, targetLanguage: e.target.value })}/></label>
         <label>字幕显示<select value={settings.displayMode} onChange={(e) => setSettings({ ...settings, displayMode: e.target.value as AppSettings['displayMode'] })}><option value="bilingual">双语</option><option value="translated">仅译文</option><option value="original">仅原文</option></select></label>
+        <label>字幕来源<select value={settings.subtitleSource} onChange={(e) => setSettings({ ...settings, subtitleSource: e.target.value as AppSettings['subtitleSource'] })}><option value="subtitles">网页或文件（无 AI）</option><option value="audio">语音识别（需要服务）</option></select></label>
         <label>上下文条数<input type="number" min="1" max="20" value={settings.contextWindow} onChange={(e) => setSettings({ ...settings, contextWindow: Number(e.target.value) })}/></label>
       </div></section>
       <section id="ai" className="card"><h2>识别与翻译</h2>
-        <p className="notice">视频画面里烧录的英文文字不能直接提取。此类视频需要先用语音识别服务把声音转成文字，再用翻译服务生成中文。</p>
+        <p className="notice">不配置任何 AI 时，插件仍可读取网页原生字幕、显示原文或使用弹窗导入的 SRT/VTT/ASS/SSA。只有在视频没有字幕文本、需要从声音识别或自动翻译时，才需要配置服务。</p>
         <ProviderEditor label="语音识别" role="asr" value={settings.asrProvider} onChange={(asrProvider) => setSettings({ ...settings, asrProvider })}/>
         <ProviderEditor label="文本翻译" role="translation" value={settings.translationProvider} onChange={(translationProvider) => setSettings({ ...settings, translationProvider })}/>
         <p className="hint">使用 Ollama 或 LM Studio 翻译时，选择 OpenAI 兼容，填写本机的 /v1 地址和已下载模型名称。只配置聊天模型不能识别音频。</p>
@@ -98,3 +99,5 @@ function ProviderEditor({ label, role, value, onChange }: {
 }
 
 
+
+\n
