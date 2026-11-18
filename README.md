@@ -4,9 +4,15 @@ SubtitleFlow 是一个 Chrome / Edge Manifest V3 浏览器插件，用于把网�
 
 ## 最新更新
 
-### 0.0.1 · 2026-11-17
+<!-- github-release:start -->
 
-首个公开版本，支持原生字幕读取、标签页音频识别、双语显示、本地 Whisper 和可配置翻译服务。
+**[v0.0.1](https://github.com/yuchen0x1/SubtitleFlow/releases/tag/v0.0.1)** · 2026-11-17
+
+在 Chrome 和 Edge 的视频页面读取原生字幕或导入字幕文件，用随播放进度移动的字幕层显示原文。需要识别声音或显示译文时，可分别配置识别与翻译服务。
+
+[全部发行记录](https://github.com/yuchen0x1/SubtitleFlow/releases)
+
+<!-- github-release:end -->
 
 完整发布记录见 [docs/releases/release-notes.md](docs/releases/release-notes.md)。
 
