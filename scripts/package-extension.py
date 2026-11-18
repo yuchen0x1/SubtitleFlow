@@ -32,6 +32,13 @@ files = {
     for path in sorted(DIST.rglob("*"))
     if path.is_file()
 }
+# Build tools preserve the checkout's line endings on Windows. Normalize text
+# entries before archiving so the same source produces the same release hash on
+# every CI runner.
+text_suffixes = {".css", ".html", ".js", ".json", ".md", ".svg", ".txt"}
+for name, body in list(files.items()):
+    if name == "LICENSE" or Path(name).suffix.lower() in text_suffixes:
+        files[name] = body.replace(b"\r\n", b"\n")
 entries = {
     MANIFEST["action"]["default_popup"], MANIFEST["options_page"],
     MANIFEST["background"]["service_worker"], "offscreen.html", "audio-worklet.js",
@@ -44,7 +51,7 @@ if any(name.endswith(".map") or "sourceMappingURL=" in body.decode("utf-8", "ign
        for name, body in files.items() if name.endswith((".map", ".js", ".css"))):
     raise SystemExit("Release assets must not include or reference source maps.")
 
-files["LICENSE"] = (ROOT / "LICENSE").read_bytes()
+files["LICENSE"] = (ROOT / "LICENSE").read_bytes().replace(b"\r\n", b"\n")
 notices = []
 for dependency in ("react", "react-dom", "scheduler"):
     license_file = ROOT / "node_modules" / dependency / "LICENSE"
