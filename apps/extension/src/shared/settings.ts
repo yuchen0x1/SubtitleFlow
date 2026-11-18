@@ -42,6 +42,7 @@ export const defaultSettings: AppSettings = {
   maxSubtitleChars: 80,
   retryCount: 2,
   privacyAcknowledged: false,
+  checkForUpdates: false,
 };
 
 function mergeProvider(value: Partial<ProviderConfig> | undefined, fallback: ProviderConfig): ProviderConfig {
@@ -54,6 +55,7 @@ export function normalizeSettings(value: Partial<AppSettings> | null | undefined
     ...defaultSettings,
     ...input,
     subtitleSource: input.subtitleSource === 'audio' ? 'audio' : 'subtitles',
+    checkForUpdates: input.checkForUpdates === true,
     asrProvider: mergeProvider(input.asrProvider, defaultSettings.asrProvider),
     translationProvider: mergeProvider(input.translationProvider, defaultSettings.translationProvider),
     style: { ...defaultStyle, ...(input.style ?? {}) },

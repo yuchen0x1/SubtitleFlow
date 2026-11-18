@@ -79,6 +79,7 @@ export interface AppSettings {
   maxSubtitleChars: number;
   retryCount: number;
   privacyAcknowledged: boolean;
+  checkForUpdates: boolean;
 }
 
 export interface VideoMetadata {
@@ -131,4 +132,5 @@ export interface SessionSnapshot {
   error?: string;
   cueCount?: number;
   statusMessage?: string;
+  importedCueCount?: number;
 }

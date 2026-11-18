@@ -3,27 +3,44 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 from .asr import load_model, model_status, transcribe_pcm
 
-app = FastAPI(title="SubtitleFlow Local Service", version="0.0.2")
+ORIGIN = r"^(chrome-extension://[a-p]{32}|http://(127\.0\.0\.1|localhost)(:\d+)?)$"
+app = FastAPI(title="SubtitleFlow Local Service")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 app.add_middleware(CORSMiddleware,
-    allow_origin_regex=r"^(chrome-extension://[a-p]{32}|http://(127\.0\.0\.1|localhost)(:\d+)?)$",
+    allow_origin_regex=ORIGIN,
     allow_methods=["GET", "POST"], allow_headers=["Content-Type", "Authorization"],
     allow_credentials=False)
 
+
+class RejectRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+local_http = urllib.request.build_opener(urllib.request.ProxyHandler({}), RejectRedirects())
+
+
+def origin_allowed(origin: str | None) -> bool:
+    return origin is None or re.fullmatch(ORIGIN, origin) is not None
+
 class TranslateRequest(BaseModel):
-    text: str
+    text: str = Field(min_length=1, max_length=8000)
     sourceLanguage: str = "auto"
     targetLanguage: str = "zh-CN"
-    context: list[dict[str, Any]] = Field(default_factory=list)
+    context: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
     model: str = ""
 
 @app.get("/health")
@@ -40,12 +57,16 @@ async def models() -> dict[str, Any]:
         "message": "首次连接时下载并加载所选 Whisper 模型" if not status["modelLoaded"] else "模型已加载"}
 
 @app.post("/v1/translate")
-async def translate(request: TranslateRequest) -> dict[str, Any]:
+async def translate(request: TranslateRequest, connection: Request) -> dict[str, Any]:
+    if not origin_allowed(connection.headers.get("origin")):
+        raise HTTPException(403, "不允许此网页访问本地翻译服务")
     model = request.model or os.getenv("SUBTITLEFLOW_TRANSLATION_MODEL", "")
     if not model:
         raise HTTPException(503, "请填写本地翻译模型名称，并启动 Ollama 或 LM Studio 的 OpenAI 兼容服务")
     endpoint = os.getenv("SUBTITLEFLOW_TRANSLATION_URL", "http://127.0.0.1:11434/v1")
-    if not (endpoint.startswith("http://127.0.0.1:") or endpoint.startswith("http://localhost:")):
+    parsed = urlsplit(endpoint)
+    if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+            or parsed.username or parsed.password or parsed.query or parsed.fragment):
         raise HTTPException(400, "本地翻译转发仅允许本机地址")
     messages = [{"role": "system", "content": "Translate subtitles to " + request.targetLanguage +
         ". Preserve meaning and tone. Return only the translation."}]
@@ -58,7 +79,7 @@ async def translate(request: TranslateRequest) -> dict[str, Any]:
         payload = json.dumps({"model": model, "messages": messages, "temperature": 0.2}).encode("utf-8")
         req = urllib.request.Request(endpoint.rstrip("/") + "/chat/completions", data=payload,
             headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with local_http.open(req, timeout=30) as response:
             return json.load(response)["choices"][0]["message"]["content"]
     try:
         text = await asyncio.to_thread(call)
@@ -68,8 +89,7 @@ async def translate(request: TranslateRequest) -> dict[str, Any]:
 
 @app.websocket("/v1/asr")
 async def asr(websocket: WebSocket) -> None:
-    origin = websocket.headers.get("origin", "")
-    if origin and not origin.startswith(("chrome-extension://", "http://127.0.0.1:", "http://localhost:")):
+    if not origin_allowed(websocket.headers.get("origin")):
         await websocket.close(code=1008)
         return
     await websocket.accept()
@@ -134,7 +154,3 @@ async def asr(websocket: WebSocket) -> None:
             await websocket.close()
         except RuntimeError:
             pass
-
-
-
-\n

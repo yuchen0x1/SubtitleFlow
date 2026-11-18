@@ -4,7 +4,11 @@ $taskRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $taskRoot
 $taskPython = Join-Path $taskRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $taskPython)) {
-    py -3.11 -m venv .venv
+    if (Get-Command uv -ErrorAction SilentlyContinue) {
+        uv venv --seed --python 3.11 .venv
+    } else {
+        py -3.11 -m venv .venv
+    }
     if ($LASTEXITCODE -ne 0) { throw '需要 Python 3.11，请先安装 Python 3.11 后重试。' }
 }
 & $taskPython -m pip install -r apps/local-service/requirements.txt

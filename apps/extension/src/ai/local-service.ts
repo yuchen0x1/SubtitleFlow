@@ -1,6 +1,7 @@
 import type { ProviderConfig, ProviderStatus } from '../shared/types';
 import { ProviderTimeoutError, ProviderUnavailableError } from './errors';
 import type { TranslationProvider, TranslationRequest } from './provider';
+import { httpEndpoint } from './endpoint';
 
 export class LocalServiceTranslationProvider implements TranslationProvider {
   readonly name = 'local-service';
@@ -18,8 +19,9 @@ export class LocalServiceTranslationProvider implements TranslationProvider {
     if (request.signal?.aborted) controller.abort();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
     try {
-      const response = await fetch(`${this.config.endpoint.replace(/\/$/, '')}/v1/translate`, {
+      const response = await fetch(httpEndpoint(this.config.endpoint, '/v1/translate'), {
         method: 'POST',
+        redirect: 'error',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...request, signal: undefined, model: this.config.model }),
         signal: controller.signal,
@@ -38,12 +40,17 @@ export class LocalServiceTranslationProvider implements TranslationProvider {
     }
   }
 
-  validateConnection(): Promise<ProviderStatus> {
+  async validateConnection(): Promise<ProviderStatus> {
     if (!this.config.endpoint.trim()) return Promise.resolve({ provider: this.name, state: 'unconfigured', message: '未配置本地服务地址', checkedAt: Date.now() });
-    return fetch(`${this.config.endpoint.replace(/\/$/, '')}/health`)
-      .then(async (response): Promise<ProviderStatus> => response.ok
+    try {
+      const response = await fetch(httpEndpoint(this.config.endpoint, '/health'), {
+        redirect: 'error', signal: AbortSignal.timeout(this.config.timeoutMs),
+      });
+      return response.ok
         ? { provider: this.name, state: 'ready', checkedAt: Date.now() }
-        : { provider: this.name, state: 'degraded', message: `HTTP ${response.status}`, checkedAt: Date.now() })
-      .catch((error): ProviderStatus => ({ provider: this.name, state: 'error', message: error instanceof Error ? error.message : '本地服务连接失败', checkedAt: Date.now() }));
+        : { provider: this.name, state: 'degraded', message: `HTTP ${response.status}`, checkedAt: Date.now() };
+    } catch (error) {
+      return { provider: this.name, state: 'error', message: error instanceof Error ? error.message : '本地服务连接失败', checkedAt: Date.now() };
+    }
   }
 }

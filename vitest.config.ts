@@ -6,5 +6,6 @@ export default defineConfig({
     include: ['tests/unit/**/*.test.ts'],
     globals: true,
     reporters: ['default'],
+    maxWorkers: 2,
   },
 });

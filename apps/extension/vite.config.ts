@@ -9,9 +9,9 @@ export default defineConfig({
   plugins: [react()],
   publicDir: resolve(extensionRoot, 'public'),
   build: {
+    target: 'chrome116',
     outDir: resolve(process.cwd(), 'dist'),
     emptyOutDir: true,
-    sourcemap: true,
     rollupOptions: {
       input: {
         popup: resolve(extensionRoot, 'src/popup/index.html'),

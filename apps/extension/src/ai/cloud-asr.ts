@@ -1,5 +1,6 @@
 import type { AsrResult, ProviderConfig } from '../shared/types';
 import { encodeWav, type AudioSegment } from '../shared/audio/segments';
+import { httpEndpoint } from './endpoint';
 
 export async function transcribePcm(config: ProviderConfig, segment: AudioSegment, sessionId: string,
   sourceLanguage: string, signal: AbortSignal): Promise<AsrResult> {
@@ -8,8 +9,9 @@ export async function transcribePcm(config: ProviderConfig, segment: AudioSegmen
   form.append('model', config.model);
   form.append('response_format', 'json');
   if (sourceLanguage && sourceLanguage !== 'auto') form.append('language', sourceLanguage);
-  const response = await fetch(config.endpoint.replace(/\/$/, '').replace(/\/audio\/transcriptions$/, '') + '/audio/transcriptions', {
-    method: 'POST', headers: config.apiKey ? { Authorization: 'Bearer ' + config.apiKey } : {}, body: form, signal,
+  const response = await fetch(httpEndpoint(config.endpoint, '/audio/transcriptions'), {
+    method: 'POST', redirect: 'error',
+    headers: config.apiKey ? { Authorization: 'Bearer ' + config.apiKey } : {}, body: form, signal,
   });
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) throw new Error('语音识别鉴权失败（HTTP ' + response.status + '），请检查 ASR API Key');
