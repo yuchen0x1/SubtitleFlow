@@ -45,6 +45,11 @@ if any(name.endswith(".map") or "sourceMappingURL=" in body.decode("utf-8", "ign
     raise SystemExit("Release assets must not include or reference source maps.")
 
 files["LICENSE"] = (ROOT / "LICENSE").read_bytes()
+notices = []
+for dependency in ("react", "react-dom", "scheduler"):
+    license_file = ROOT / "node_modules" / dependency / "LICENSE"
+    notices.append(f"{dependency}\n\n{license_file.read_text(encoding='utf-8').strip()}")
+files["THIRD_PARTY_NOTICES.txt"] = ("\n\n".join(notices) + "\n").encode()
 OUT.mkdir(exist_ok=True)
 archive = OUT / f"SubtitleFlow-{VERSION}-Chromium.zip"
 with ZipFile(archive, "w") as package:
