@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SubtitleFlow",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "minimum_chrome_version": "116",
   "description": "网页视频字幕与字幕文件叠加显示，可选语音识别和翻译。",
   "action": {
