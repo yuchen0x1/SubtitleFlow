@@ -29,6 +29,19 @@ describe('SubtitleOverlay', () => {
     overlay.destroy();
   });
 
+  it('renders subtitle syntax as text instead of creating elements', () => {
+    const overlay = new SubtitleOverlay(defaultStyle);
+    overlay.mount();
+    overlay.upsertCue({ ...cue, originalText: 'Use <tag> carefully', translatedText: '保持 <tag> 为文本' });
+    overlay.renderAt(2);
+    const host = document.querySelector('#subtitleflow-overlay-host') as HTMLDivElement;
+    const root = host.shadowRoot!;
+    expect(root.querySelector('tag')).toBeNull();
+    expect(root.querySelector('.original')?.textContent).toBe('Use <tag> carefully');
+    expect(root.querySelector('.translated')?.textContent).toBe('保持 <tag> 为文本');
+    overlay.destroy();
+  });
+
   it('shows service errors while there is no active cue and clears them after a cue arrives', () => {
     const overlay = new SubtitleOverlay(defaultStyle);
     overlay.mount();

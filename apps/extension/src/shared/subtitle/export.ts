@@ -1,4 +1,5 @@
 import type { SubtitleCue } from '../types';
+import { toPlainVttText } from './text';
 
 function formatTime(seconds: number, separator: ',' | '.'): string {
   const safe = Math.max(0, seconds);
@@ -33,7 +34,7 @@ export function exportVtt(cues: SubtitleCue[]): string {
     .filter((cue) => cue.endTime >= cue.startTime)
     .slice()
     .sort((a, b) => a.startTime - b.startTime)
-    .map((cue) => `${formatTime(cue.startTime, '.')} --> ${formatTime(cue.endTime, '.')}\n${cueText(cue)}\n`)
+    .map((cue) => `${formatTime(cue.startTime, '.')} --> ${formatTime(cue.endTime, '.')}\n${toPlainVttText(cueText(cue))}\n`)
     .join('\n');
   return `WEBVTT\n\n${body}`;
 }
