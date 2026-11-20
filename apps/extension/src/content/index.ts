@@ -5,6 +5,7 @@ import { SubtitleOverlay } from '../overlay/overlay';
 import { adaptVideoMetadata } from './site-adapters';
 import { VideoDetector } from './video-detector';
 import type { SubtitleCue } from '../shared/types';
+import { toPlainVttText } from '../shared/subtitle/text';
 
 const VERSION = chrome.runtime.getManifest().version;
 const shared = globalThis as typeof globalThis & { __subtitleFlow?: { version: string; dispose: () => void } };
@@ -43,7 +44,7 @@ function bootstrap(): () => void {
     if (!nativeFullscreenTrack) nativeFullscreenTrack = video.addTextTrack('subtitles', 'SubtitleFlow', 'zh');
     const existing = renderedNative.get(cue.id);
     if (existing) { try { nativeFullscreenTrack.removeCue(existing); } catch { /* Player changed tracks. */ } }
-    const text = cue.translatedText || cue.originalText;
+    const text = toPlainVttText(cue.translatedText || cue.originalText);
     const item = new VTTCue(cue.startTime, cue.endTime, text);
     nativeFullscreenTrack.addCue(item); renderedNative.set(cue.id, item);
     nativeFullscreenTrack.mode = document.fullscreenElement === video ? 'showing' : 'disabled';

@@ -1,4 +1,5 @@
 import type { SubtitleCue } from '../shared/types';
+import { normalizeSubtitleText } from '../shared/subtitle/text';
 
 export function extractNativeSubtitles(video: HTMLVideoElement, sourceLanguage = 'auto'): SubtitleCue[] {
   const cues: SubtitleCue[] = [];
@@ -15,7 +16,7 @@ export function extractNativeSubtitles(video: HTMLVideoElement, sourceLanguage =
     if (!list) { track.mode = previousMode; continue; }
     for (let index = 0; index < list.length; index += 1) {
       const cue = list[index] as VTTCue;
-      const text = cue.text.replace(/<[^>]+>/g, '').trim();
+      const text = normalizeSubtitleText(cue.text);
       if (!text) continue;
       cues.push({
         id: `native-${trackIndex}-${index}-${Math.round(cue.startTime * 1000)}`,
