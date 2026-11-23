@@ -1,15 +1,7 @@
 import type { SubtitleCue } from '../types';
+import { normalizeSubtitleText } from './text';
 
 type SubtitleFormat = 'srt' | 'vtt' | 'ass' | 'ssa' | 'auto';
-
-function stripMarkup(value: string): string {
-  return value
-    .replace(/<[^>]+>/g, '')
-    .replace(/\{\\[^}]+\}/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .trim();
-}
 
 export function parseTimestamp(value: string): number {
   const normalized = value.trim().replace(',', '.');
@@ -33,7 +25,7 @@ function buildCue(index: number, startTime: number, endTime: number, text: strin
     tabId: 0,
     startTime,
     endTime: Math.max(endTime, startTime),
-    originalText: stripMarkup(text.replace(/\r/g, '').split('\n').join(' ')),
+    originalText: normalizeSubtitleText(text.replace(/\r/g, '').split('\n').join(' ')),
     sourceLanguage: 'auto',
     targetLanguage: 'zh-CN',
     status: 'FINAL',
