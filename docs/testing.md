@@ -17,6 +17,15 @@ npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org
 
 CI 矩阵在 Ubuntu、Windows、macOS 构建同一 MV3 包。到 [Actions](https://github.com/yuchen0x1/SubtitleFlow/actions) 查看每个提交的结果。UI 验收用真实安装的扩展和合成 HTML5 视频，测试原生字幕、导入覆盖、重开弹窗、移除和停止。模拟更新场景覆盖数值版本比较、已是最新、新版本、稍后提醒、错误来源或哈希缺失、网络故障。
 
+## v0.0.5 本地结果
+
+| 检查 | 结果 |
+| --- | --- |
+| Windows / Node.js 26，TypeScript、构建与 Chromium ZIP | 通过；21 个文件，SHA-256 `79982fa7122ec43d326a0f821c6adde4f3e2a001b8b76efe319fed5db2d44409` |
+| Vitest | 17 个测试文件，56 项通过；覆盖偏移边界、导出格式和偏移后的 overlay 渲染 |
+| npm 运行时依赖审计 | `npm audit --omit=dev --audit-level=high` 0 项；审计脚本可处理 npm 的零漏洞报告 |
+| UI / 浏览器实机 | 未执行商业视频网站、DRM、长时 ASR 和真实下载；待安装 v0.0.5 后按下方清单验收 |
+
 ## v0.0.2 本地结果
 
 | 检查 | 结果 |

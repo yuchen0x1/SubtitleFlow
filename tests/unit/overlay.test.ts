@@ -65,5 +65,26 @@ describe('SubtitleOverlay', () => {
     expect(fullscreen.querySelector('#subtitleflow-overlay-host')).not.toBeNull();
     overlay.destroy();
     fullscreen.remove();
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: null });
+  });
+
+  it('renders cues using the user-adjusted offset', () => {
+    const overlay = new SubtitleOverlay(defaultStyle);
+    overlay.mount();
+    overlay.upsertCue(cue);
+    overlay.setOffset(2000);
+    overlay.renderAt(2);
+    expect(contentText()).toBe('');
+    overlay.renderAt(4);
+    expect(contentText()).toContain('Hello world');
+
+    // A negative offset moves the cue earlier: media time 0 shows the cue
+    // whose unshifted start is 2 seconds.
+    overlay.setOffset(-2000);
+    overlay.renderAt(0);
+    expect(contentText()).toContain('Hello world');
+    overlay.renderAt(4);
+    expect(contentText()).toBe('');
+    overlay.destroy();
   });
 });

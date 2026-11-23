@@ -30,6 +30,7 @@ export class SessionManager {
       targetLanguage: settings.targetLanguage,
       displayMode: settings.displayMode,
       overlayVisible: settings.showOverlay,
+      subtitleOffsetMs: 0,
       settings,
     };
     this.sessions.set(tabId, session);
@@ -60,7 +61,7 @@ export class SessionManager {
 
   async stop(tabId: number): Promise<void> {
     const session = this.sessions.get(tabId);
-    if (!session) return;
+    if (!session || session.status === 'STOPPING') return;
     session.status = 'STOPPING';
     if (session.captureId) await this.hooks.stopCapture(session.captureId);
     session.status = 'STOPPED';

@@ -26,6 +26,7 @@ function bootstrap(): () => void {
   let sourceLanguage = 'auto';
   let nativeFullscreenTrack: TextTrack | undefined;
   const renderedNative = new Map<string, VTTCue>();
+  const nativeCues = new Map<string, SubtitleCue>();
   const send = (message: AnyMessageEnvelope) => { void chrome.runtime.sendMessage(message).catch(() => undefined); };
 
   function readProbe(language = sourceLanguage, includeCues = true) {
@@ -41,18 +42,20 @@ function bootstrap(): () => void {
   function updateNative(cue: SubtitleCue): void {
     const video = detector.current();
     if (!video || typeof VTTCue === 'undefined') return;
+    nativeCues.set(cue.id, cue);
     if (!nativeFullscreenTrack) nativeFullscreenTrack = video.addTextTrack('subtitles', 'SubtitleFlow', 'zh');
     const existing = renderedNative.get(cue.id);
     if (existing) { try { nativeFullscreenTrack.removeCue(existing); } catch { /* Player changed tracks. */ } }
     const text = toPlainVttText(cue.translatedText || cue.originalText);
-    const item = new VTTCue(cue.startTime, cue.endTime, text);
+    const shift = overlay.offset / 1000;
+    const item = new VTTCue(Math.max(0, cue.startTime + shift), Math.max(0, cue.endTime + shift), text);
     nativeFullscreenTrack.addCue(item); renderedNative.set(cue.id, item);
     nativeFullscreenTrack.mode = document.fullscreenElement === video ? 'showing' : 'disabled';
   }
   function clear(): void {
     sessionId = undefined; enabled = false; overlay.setStatus(''); overlay.setCues([]); overlay.renderAt(0);
     if (nativeFullscreenTrack) nativeFullscreenTrack.mode = 'disabled';
-    nativeFullscreenTrack = undefined; renderedNative.clear(); nativeSignature = '';
+    nativeFullscreenTrack = undefined; renderedNative.clear(); nativeCues.clear(); nativeSignature = '';
   }
   function fullscreen(): void {
     if (nativeFullscreenTrack) nativeFullscreenTrack.mode = enabled && document.fullscreenElement === detector.current() ? 'showing' : 'disabled';
@@ -70,6 +73,7 @@ function bootstrap(): () => void {
       clear(); sessionId = message.payload.sessionId; enabled = true;
       sourceLanguage = message.payload.sourceLanguage;
       readNative = message.payload.readNative;
+      overlay.setOffset(message.payload.offsetMs ?? 0);
       overlay.mount(); overlay.setDisplayMode(message.payload.displayMode);
       overlay.updateStyle(message.payload.style); overlay.setVisible(message.payload.visible);
       overlay.setStatus('SubtitleFlow · 正在连接字幕服务…');
@@ -78,13 +82,19 @@ function bootstrap(): () => void {
     }
     if (message.type === 'SUBTITLE_UPDATE' && message.payload.sessionId === sessionId) {
       const state = detector.playback();
+      const shiftedTime = state.currentTime - overlay.offset / 1000;
       for (const cue of message.payload.cues) {
-        overlay.upsertCue(cue, state.currentTime, !state.paused && !state.seeking);
+        overlay.upsertCue(cue, shiftedTime, !state.paused && !state.seeking);
         if (cue.status === 'TRANSLATED' || cue.status === 'FINAL') updateNative(cue);
       }
       overlay.setStatus(''); overlay.renderAt(state.currentTime);
     }
     if (message.type === 'TOGGLE_OVERLAY') overlay.setVisible(message.payload.visible);
+    if (message.type === 'SET_SUBTITLE_OFFSET' && message.sessionId === sessionId) {
+      overlay.setOffset(message.payload.offsetMs);
+      for (const cue of nativeCues.values()) updateNative(cue);
+      overlay.renderAt(detector.playback().currentTime);
+    }
     if (message.type === 'SETTINGS_UPDATED') {
       overlay.updateStyle(message.payload.settings.style); overlay.setDisplayMode(message.payload.settings.displayMode);
       sourceLanguage = message.payload.settings.sourceLanguage; playback();

@@ -7,6 +7,8 @@ import { SessionManager, type SessionRecord } from './session-manager';
 import { CaptionPipeline } from './caption-pipeline';
 import { buildAsrWebSocketUrl } from './provider-routing';
 import { providerUrl } from '../ai/endpoint';
+import { normalizeSubtitleOffsetMs, shiftCues } from '../shared/subtitle/offset';
+import { exportSrt, exportVtt } from '../shared/subtitle/export';
 
 interface VideoProbe { video: VideoMetadata; playback: PlaybackState; cues: SubtitleCue[]; }
 interface RunningSession { frameId: number; pipeline: CaptionPipeline; cues: Map<string, SubtitleCue>; source: 'page' | 'file' | 'audio'; }
@@ -36,6 +38,7 @@ const manager: SessionManager = new SessionManager({
         sessionId: session.sessionId, style: session.settings.style,
         displayMode: session.displayMode, visible: session.overlayVisible,
         sourceLanguage: session.settings.sourceLanguage, readNative: runtime.source === 'page',
+        offsetMs: session.subtitleOffsetMs ?? 0,
       }, { tabId: session.tabId, sessionId: session.sessionId })) as VideoProbe | undefined;
       if (runtime.source !== 'audio') {
         const cues = runtime.source === 'file' ? fileCues : probe?.cues ?? found.probe.cues;
@@ -169,6 +172,8 @@ async function handle(message: AnyMessageEnvelope, sender: chrome.runtime.Messag
       else if (runtime) void translateNearby(session);
       return { ok: true };
     }
+    case 'EXPORT_SUBTITLES':
+      return { ok: true, ...(await exportSessionCues(message.payload.tabId, message.payload.format)) };
     case 'TOGGLE_OVERLAY': {
       const session = manager.get(message.payload.tabId);
       if (session) { session.overlayVisible = message.payload.visible; await sendToSession(session, message); }
@@ -195,6 +200,14 @@ async function handle(message: AnyMessageEnvelope, sender: chrome.runtime.Messag
       ensureCanChangeImport(message.payload.tabId);
       await clearImportedSubtitles(message.payload.tabId);
       return { ok: true };
+    case 'SET_SUBTITLE_OFFSET': {
+      const session = manager.get(message.payload.tabId);
+      if (!session) throw new Error('请先显示字幕，再调整时间轴偏移');
+      const offsetMs = normalizeSubtitleOffsetMs(message.payload.offsetMs);
+      session.subtitleOffsetMs = offsetMs;
+      await sendToSession(session, makeMessage('SET_SUBTITLE_OFFSET', { tabId: session.tabId, offsetMs }, { tabId: session.tabId, sessionId: session.sessionId }));
+      return { ok: true, offsetMs };
+    }
     case 'ERROR_OCCURRED': {
       const id = message.sessionId ?? message.payload.sessionId;
       const session = manager.all().find((item) => item.sessionId === id);
@@ -203,6 +216,34 @@ async function handle(message: AnyMessageEnvelope, sender: chrome.runtime.Messag
     }
     default: return { ok: true };
   }
+}
+
+async function exportSessionCues(tabId: number, format: 'srt' | 'vtt'): Promise<{ fileName: string; text: string; count: number }> {
+  const imported = await loadImportedSubtitles(tabId);
+  const session = manager.all().find((item) => item.tabId === tabId);
+  let cues: SubtitleCue[] = [];
+  if (session) {
+    cues = [...(running.get(session.sessionId)?.cues.values() ?? [])];
+  }
+  if (!cues.length && imported.length) cues = imported;
+  if (!cues.length) {
+    try {
+      const found = probes.get(tabId) ?? await discoverVideo(tabId);
+      probes.set(tabId, found);
+      cues = found.probe.cues;
+    } catch {
+      // Restricted pages cannot be probed; report the user-facing error below.
+    }
+  }
+  if (!cues.length) throw new Error('当前标签页没有可导出的字幕');
+  if (session) cues = shiftCues(cues, session.subtitleOffsetMs ?? 0);
+  const fileName = 'SubtitleFlow-' + exportStamp() + '.' + format;
+  const text = format === 'srt' ? exportSrt(cues) : exportVtt(cues);
+  return { fileName, text, count: cues.length };
+}
+
+function exportStamp(): string {
+  return new Date().toISOString().replace('T', ' ').replace(/\..+$/, '').replace(/[:]/g, '-').replace(' ', '_');
 }
 
 function snapshot(session: SessionRecord): SessionSnapshot {
@@ -241,7 +282,10 @@ function normalizeCue(session: SessionRecord, cue: SubtitleCue): SubtitleCue {
 async function translateNearby(session: SessionRecord): Promise<void> {
   const runtime = running.get(session.sessionId);
   if (!runtime || session.status === 'PAUSED' || session.status === 'ERROR') return;
-  const time = session.playback?.currentTime ?? 0;
+  // The visible cue is looked up at media time minus the user offset, so the
+  // translation window must follow the same clock or bilingual text arrives
+  // late for shifted tracks.
+  const time = (session.playback?.currentTime ?? 0) - (session.subtitleOffsetMs ?? 0) / 1000;
   const nearby = [...runtime.cues.values()].filter((cue) => cue.endTime > time - 1 && cue.startTime < time + 25)
     .sort((a, b) => a.startTime - b.startTime).slice(0, 16);
   await Promise.all(nearby.map((cue) => runtime.pipeline.accept(cue)));
@@ -249,6 +293,9 @@ async function translateNearby(session: SessionRecord): Promise<void> {
 
 async function publishCue(session: SessionRecord, cue: SubtitleCue): Promise<void> {
   if (!running.has(session.sessionId)) return;
+  const runtime = running.get(session.sessionId);
+  runtime?.cues.set(cue.id, cue);
+  if (runtime && runtime.cues.size > 3000) runtime.cues.delete(runtime.cues.keys().next().value!);
   if (cue.status === 'TRANSLATED' || (session.displayMode === 'original' && cue.status === 'FINAL')) {
     session.status = session.status === 'PAUSED' ? 'PAUSED' : 'DISPLAYING';
     session.cueCount = (session.cueCount ?? 0) + 1;
