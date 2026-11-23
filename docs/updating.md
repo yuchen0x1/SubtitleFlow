@@ -6,12 +6,12 @@
 2. 在下载目录校验签名与完整性。需要支持 `release verify-asset` 的 GitHub CLI。将示例中的版本替换成发行页标签。
 
    ```powershell
-   gh release verify v0.0.2 -R yuchen0x1/SubtitleFlow
-   gh release verify-asset v0.0.2 SubtitleFlow-0.0.2-Chromium.zip -R yuchen0x1/SubtitleFlow
-   Get-FileHash .\SubtitleFlow-0.0.2-Chromium.zip -Algorithm SHA256
+   gh release verify v0.0.4 -R yuchen0x1/SubtitleFlow
+   gh release verify-asset v0.0.4 SubtitleFlow-0.0.4-Chromium.zip -R yuchen0x1/SubtitleFlow
+   Get-FileHash .\SubtitleFlow-0.0.4-Chromium.zip -Algorithm SHA256
    ```
 
-   macOS/Linux 使用 `shasum -a 256 SubtitleFlow-0.0.2-Chromium.zip`。核对输出与 `SHA256SUMS`，任何校验失败都应保留原安装并重新获取可信资产。旧版 v0.0.1 早于不可变 Release。
+   macOS/Linux 使用 `shasum -a 256 SubtitleFlow-0.0.4-Chromium.zip`。核对输出与 `SHA256SUMS`，任何校验失败都应保留原安装并重新获取可信资产。旧版 v0.0.1 早于不可变 Release。
 
 3. 首次安装时解压，在 Chrome 的 `chrome://extensions` 或 Edge 的 `edge://extensions` 开启开发者模式，选择“加载已解压的扩展程序”，选中含 `manifest.json` 的目录。
 4. 更新时先停止当前字幕会话。将现有加载目录完整备份到同一磁盘的独立位置，在临时目录解压并校验文件齐全，然后用新目录替换原路径的内容。在扩展管理页点击“重新加载”，刷新视频页并检查版本。保留原路径和原扩展项目，可以避免因扩展 ID 改变而丢失原配置。

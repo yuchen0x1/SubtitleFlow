@@ -38,6 +38,8 @@ export type MessageType =
   | 'SETTINGS_UPDATED'
   | 'IMPORT_SUBTITLES'
   | 'CLEAR_IMPORTED_SUBTITLES'
+  | 'SET_SUBTITLE_OFFSET'
+  | 'EXPORT_SUBTITLES'
   | 'TOGGLE_OVERLAY'
   | 'ERROR_OCCURRED';
 
@@ -61,13 +63,15 @@ export interface MessagePayloadMap {
   TRANSLATION_RESULT: { sessionId: string; cue: SubtitleCue };
   SUBTITLE_UPDATE: { sessionId: string; cues: SubtitleCue[] };
   VIDEO_DETECTED: VideoMetadata & { sourceLanguage?: string };
-  REQUEST_NATIVE_SUBTITLES: { sessionId: string; displayMode: DisplayMode; style: SubtitleStyle; visible: boolean; sourceLanguage: string; readNative: boolean };
+  REQUEST_NATIVE_SUBTITLES: { sessionId: string; displayMode: DisplayMode; style: SubtitleStyle; visible: boolean; sourceLanguage: string; readNative: boolean; offsetMs?: number };
   NATIVE_SUBTITLES: { sessionId: string; cues: SubtitleCue[] };
   PLAYBACK_STATE: { sessionId?: string; tabId: number; playback: PlaybackState };
   PROVIDER_STATUS: ProviderStatus;
   SETTINGS_UPDATED: { settings: AppSettings };
   IMPORT_SUBTITLES: { tabId: number; cues: SubtitleCue[]; fileName?: string };
   CLEAR_IMPORTED_SUBTITLES: { tabId: number };
+  SET_SUBTITLE_OFFSET: { tabId: number; offsetMs: number };
+  EXPORT_SUBTITLES: { tabId: number; format: 'srt' | 'vtt' };
   TOGGLE_OVERLAY: { tabId: number; visible: boolean };
   ERROR_OCCURRED: { sessionId?: string; code: string; message: string; recoverable?: boolean };
 }

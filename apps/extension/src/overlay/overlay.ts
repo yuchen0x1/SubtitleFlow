@@ -1,5 +1,6 @@
 import type { DisplayMode, SubtitleCue, SubtitleStyle } from '../shared/types';
 import { SubtitleTimeline } from '../shared/subtitle/timeline';
+import { normalizeSubtitleOffsetMs } from '../shared/subtitle/offset';
 
 export class SubtitleOverlay {
   private host?: HTMLDivElement;
@@ -14,6 +15,7 @@ export class SubtitleOverlay {
   private dragOffset = { x: 0, y: 0 };
   private rendered = '';
   private live?: { cue: SubtitleCue; expiresAt: number };
+  private offsetMs = 0;
 
   constructor(style: SubtitleStyle) { this.style = style; }
 
@@ -49,6 +51,8 @@ export class SubtitleOverlay {
     this.rendered = '';
   }
   setDisplayMode(mode: DisplayMode): void { this.displayMode = mode; this.rendered = ''; }
+  setOffset(offsetMs: number): void { this.offsetMs = normalizeSubtitleOffsetMs(offsetMs); this.rendered = ''; }
+  get offset(): number { return this.offsetMs; }
   setVisible(visible: boolean): void { if (this.host) this.host.style.display = visible ? 'block' : 'none'; }
   setStatus(status: string): void { this.status = status; this.rendered = ''; }
   updateStyle(style: SubtitleStyle): void { this.style = style; this.applyStyle(); }
@@ -56,7 +60,7 @@ export class SubtitleOverlay {
 
   renderAt(time: number): void {
     if (!this.content) return;
-    const active = this.timeline.activeAt(time).slice(-2);
+    const active = this.timeline.activeAt(time - this.offsetMs / 1000).slice(-2);
     if (this.live && time >= this.live.expiresAt) this.live = undefined;
     if (!active.length && this.live) active.push(this.live.cue);
     const lines: Array<{ text: string; className: string }> = [];

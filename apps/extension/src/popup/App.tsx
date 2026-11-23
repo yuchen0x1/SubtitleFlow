@@ -5,6 +5,7 @@ import { loadSettings, saveSettings } from '../shared/storage';
 import { parseSubtitleFile } from '../shared/subtitle/parser';
 import type { AppSettings, SessionSnapshot } from '../shared/types';
 import { checkForUpdate, dismissUpdate, type ReleaseUpdate } from '../shared/updates';
+import { formatOffsetLabel, normalizeSubtitleOffsetMs } from '../shared/subtitle/offset';
 
 const version = globalThis.chrome?.runtime?.getManifest?.().version ?? '';
 
@@ -15,6 +16,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [update, setUpdate] = useState<ReleaseUpdate>();
+  const [offsetMs, setOffsetMs] = useState(0);
 
   useEffect(() => {
     void loadSettings().then((stored) => {
@@ -26,7 +28,7 @@ export function App() {
       if (tab?.id === undefined) return;
       setTabId(tab.id);
       const result = await chrome.runtime.sendMessage(makeMessage('GET_SESSION_STATE', { tabId: tab.id }));
-      if (result && !result.error) setSession(result);
+      if (result && !result.error) { setSession(result); setOffsetMs(result.subtitleOffsetMs ?? 0); }
     }).catch((error) => setMessage(String(error)));
   }, []);
 
@@ -58,8 +60,9 @@ export function App() {
         ? makeMessage(type, { tabId, settings: activeSettings }, { tabId })
         : makeMessage(type, { tabId }, { tabId }));
       if (result?.error) throw new Error(result.error);
+      if (result?.subtitleOffsetMs !== undefined) setOffsetMs(result.subtitleOffsetMs);
       setSession((current) => ({
-        status: 'IDLE', video: current?.video, importedCueCount: current?.importedCueCount, ...result,
+        status: 'IDLE', video: current?.video, importedCueCount: current?.importedCueCount, subtitleOffsetMs: current?.subtitleOffsetMs, ...result,
       }));
     } catch (error) {
       const text = error instanceof Error ? error.message : '操作失败';
@@ -92,6 +95,34 @@ export function App() {
     finally { setBusy(false); }
   };
 
+  const updateOffset = async (next: number) => {
+    if (tabId === undefined) return;
+    const value = normalizeSubtitleOffsetMs(next);
+    setOffsetMs(value); setMessage('');
+    try {
+      const result = await chrome.runtime.sendMessage(makeMessage('SET_SUBTITLE_OFFSET', { tabId, offsetMs: value }));
+      if (result?.error) throw new Error(result.error);
+    } catch (error) { setMessage(error instanceof Error ? error.message : '无法调整时间轴'); }
+  };
+
+  const exportSubtitles = async (format: 'srt' | 'vtt') => {
+    if (tabId === undefined) return;
+    setBusy(true); setMessage('');
+    try {
+      const result = await chrome.runtime.sendMessage(makeMessage('EXPORT_SUBTITLES', { tabId, format }));
+      if (result?.error) throw new Error(result.error);
+      if (!result?.text) throw new Error('当前标签页没有可导出的字幕。请先显示网页字幕或导入文件。');
+      const blob = new Blob([result.text], { type: format === 'srt' ? 'application/x-subrip' : 'text/vtt' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url; anchor.download = result.fileName ?? 'SubtitleFlow.' + format;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setMessage(`已导出 ${result.count ?? '当前'} 条字幕。`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : '导出失败'); }
+    finally { setBusy(false); }
+  };
+
   const importedCount = session?.importedCueCount ?? 0;
   const status = session?.status ?? 'IDLE';
   const active = !['IDLE', 'STOPPED', 'ERROR'].includes(status);
@@ -103,6 +134,14 @@ export function App() {
       <label>目标语言<select value={settings.targetLanguage} onChange={(e) => setSettings({ ...settings, targetLanguage: e.target.value })}><option value="zh-CN">简体中文</option><option value="zh-TW">繁体中文</option></select></label>
     </section>
     <label>字幕模式<select disabled={active} value={settings.displayMode} onChange={(e) => setSettings({ ...settings, displayMode: e.target.value as AppSettings['displayMode'] })}><option value="original">仅原文</option><option value="bilingual">双语字幕</option><option value="translated">仅中文</option></select></label>
+    <div className="offset-row">
+      <div><span className="label">时间轴偏移</span><small>{formatOffsetLabel(offsetMs)}</small></div>
+      <div className="offset-actions">
+        <button disabled={busy || !active || offsetMs <= -30000} onClick={() => void updateOffset(offsetMs - 500)}>−0.5s</button>
+        <button disabled={busy || !active || offsetMs >= 30000} onClick={() => void updateOffset(offsetMs + 500)}>+0.5s</button>
+        <button className="link-button" disabled={busy || !active || offsetMs === 0} onClick={() => void updateOffset(0)}>归零</button>
+      </div>
+    </div>
     <label>字幕来源<select disabled={busy || active} value={settings.subtitleSource} onChange={(e) => setSettings({ ...settings, subtitleSource: e.target.value as AppSettings['subtitleSource'] })}><option value="subtitles">网页或文件（无 AI）</option><option value="audio">语音识别（需要服务）</option></select></label>
     {settings.subtitleSource === 'subtitles' && <div className="subtitle-file">
       <label className="file-import">导入字幕文件
@@ -119,6 +158,10 @@ export function App() {
       <button className="danger" disabled={busy || status === 'IDLE'} onClick={() => void run('STOP_TRANSLATION')}>停止</button>
     </div>
     <div className="status-line"><span>{statusLabel(status)}</span></div>
+    <div className="export-row">
+      <span className="label">导出当前字幕</span>
+      <div><button disabled={busy || tabId === undefined} onClick={() => void exportSubtitles('srt')}>.SRT</button><button disabled={busy || tabId === undefined} onClick={() => void exportSubtitles('vtt')}>WebVTT</button></div>
+    </div>
     {(message || session?.error) && <p role="alert" className="error-detail">{message || session?.error}</p>}
     {session?.statusMessage && !session.error && <p className="runtime-detail">{session.statusMessage}{session.cueCount ? ' · ' + session.cueCount + ' 条' : ''}</p>}
     {update && <section className="site-card update-notice" aria-label="版本更新">

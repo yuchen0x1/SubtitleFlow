@@ -129,6 +129,7 @@ export interface SessionSnapshot {
   targetLanguage: string;
   displayMode: DisplayMode;
   overlayVisible: boolean;
+  subtitleOffsetMs?: number;
   error?: string;
   cueCount?: number;
   statusMessage?: string;
